@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, Command, ValueEnum, ValueHint};
+use clap_complete::Shell;
 
 /// Get arguments from the command line.
 ///
@@ -172,6 +173,17 @@ pub fn build_cli() -> Command {
                 .help("Choose the verbosity of the logging level. Warnings and errors will always be shown by default. To completely disable them, \
                 use the off argument."),
         )
+        .subcommand_negates_reqs(true)
+        .subcommand(
+            Command::new("completion")
+                .about("Generate shell completions for the specified shell")
+                .arg(
+                    Arg::new("shell")
+                        .required(true)
+                        .value_parser(value_parser!(Shell))
+                        .help("The shell to generate completions for"),
+                ),
+        )
 }
 /// Verbosity enum for different logging levels.
 ///
@@ -317,5 +329,44 @@ mod test {
             "--backgrounds",
         ]);
         assert!(matches.is_err());
+    }
+
+    #[test]
+    fn completion_subcommand_valid_shell() {
+        let matches = build_cli().try_get_matches_from(["artem", "completion", "bash"]);
+        assert!(matches.is_ok());
+        let matches = matches.unwrap();
+        let sub = matches.subcommand_matches("completion").unwrap();
+        assert_eq!(*sub.get_one::<Shell>("shell").unwrap(), Shell::Bash);
+    }
+
+    #[test]
+    fn completion_subcommand_all_shells() {
+        for shell in ["bash", "elvish", "fish", "powershell", "zsh"] {
+            let matches = build_cli().try_get_matches_from(["artem", "completion", shell]);
+            assert!(
+                matches.is_ok(),
+                "completion subcommand should accept {shell}"
+            );
+        }
+    }
+
+    #[test]
+    fn completion_subcommand_missing_shell() {
+        let matches = build_cli().try_get_matches_from(["artem", "completion"]);
+        assert!(matches.is_err());
+    }
+
+    #[test]
+    fn completion_subcommand_invalid_shell() {
+        let matches = build_cli().try_get_matches_from(["artem", "completion", "invalid"]);
+        assert!(matches.is_err());
+    }
+
+    #[test]
+    fn completion_subcommand_negates_input_requirement() {
+        // completion should work without requiring INPUT
+        let matches = build_cli().try_get_matches_from(["artem", "completion", "bash"]);
+        assert!(matches.is_ok());
     }
 }

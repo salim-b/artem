@@ -30,6 +30,20 @@ fn main() {
     // get args from cli
     let matches = cli::build_cli().get_matches();
 
+    // handle the completion subcommand before any other processing
+    if let Some(sub_matches) = matches.subcommand_matches("completion") {
+        let shell = *sub_matches
+            .get_one::<clap_complete::Shell>("shell")
+            .expect("shell argument is required");
+        clap_complete::generate(
+            shell,
+            &mut cli::build_cli(),
+            clap::crate_name!(),
+            &mut std::io::stdout(),
+        );
+        return;
+    }
+
     // get log level from args
     // enable logging
     env_logger::builder()
