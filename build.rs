@@ -4,7 +4,7 @@ use clap_complete::{
     Generator,
 };
 use std::ffi::OsString;
-use std::{env, path};
+use std::{env, fs, path};
 
 use std::io::Error;
 
@@ -20,21 +20,49 @@ fn main() -> Result<(), Error> {
 
     let mut cmd = build_cli();
     //this is only generated when the git ref changes???
-    generate_shell_completion(&mut cmd, &out_dir, Bash).unwrap();
-    generate_shell_completion(&mut cmd, &out_dir, PowerShell).unwrap();
-    generate_shell_completion(&mut cmd, &out_dir, Zsh).unwrap();
-    generate_shell_completion(&mut cmd, &out_dir, Fish).unwrap();
-    generate_shell_completion(&mut cmd, &out_dir, Elvish).unwrap();
+    let bash_path = generate_shell_completion(&mut cmd, &out_dir, Bash)?;
+    let powershell_path = generate_shell_completion(&mut cmd, &out_dir, PowerShell)?;
+    let zsh_path = generate_shell_completion(&mut cmd, &out_dir, Zsh)?;
+    let fish_path = generate_shell_completion(&mut cmd, &out_dir, Fish)?;
+    let elvish_path = generate_shell_completion(&mut cmd, &out_dir, Elvish)?;
 
     let man = clap_mangen::Man::new(cmd);
     let mut buffer: Vec<u8> = Default::default();
     man.render(&mut buffer)?;
 
-    let man_page_path = path::PathBuf::from(out_dir).join("artem.1");
+    let man_page_path = path::PathBuf::from(&out_dir).join("artem.1");
 
     std::fs::write(&man_page_path, buffer)?;
 
     println!("cargo:warning=man page is generated: {:?}", man_page_path);
+
+    // When LIBRARY_PREFIX is set (e.g. during conda/pixi builds), copy the
+    // generated completions and man page to the standard share directories
+    // under that prefix so they are available in `pixi shell` etc.
+    if let Ok(prefix) = env::var("LIBRARY_PREFIX") {
+        let prefix = path::PathBuf::from(prefix);
+
+        let copies: &[(&path::Path, &[&str])] = &[
+            (&bash_path, &["share", "bash-completion", "completions"]),
+            (&fish_path, &["share", "fish", "vendor_completions.d"]),
+            (&zsh_path, &["share", "zsh", "vendor-completions"]),
+            (&powershell_path, &["share", "powershell", "completions"]),
+            (&elvish_path, &["share", "elvish", "completions"]),
+            (&man_page_path, &["share", "man", "man1"]),
+        ];
+
+        for (src, dest_parts) in copies {
+            let dest_dir: path::PathBuf = dest_parts.iter().fold(prefix.clone(), |p, s| p.join(s));
+            fs::create_dir_all(&dest_dir)?;
+            let file_name = src.file_name().expect("source path has a file name");
+            let dest = dest_dir.join(file_name);
+            fs::copy(src, &dest)?;
+            println!(
+                "cargo:warning=copied {:?} to {:?}",
+                file_name, dest
+            );
+        }
+    }
 
     Ok(())
 }
